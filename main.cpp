@@ -48,7 +48,7 @@ int main() {
     // Set up the hardware
     setup();
 
-    printf("\n=== Pi Modem - SIM7080G ===\n");
+    printf("\n===== Pi Modem - SIM7080G Firmware =====\n");
     printf("Build: %s %s\n\n", __DATE__, __TIME__);
     
     led_blink(3, 150);
@@ -70,14 +70,14 @@ int main() {
 
     if (sim_ready) {
         modem.get_sim_info();
-        printf("\n=== SIM Ready ===\n\n");
+        printf("\n===== SIM Ready =====\n\n");
 
         while (true) {
             led_blink(1, 100);
             sleep_ms(2000);
         }
     } else {
-        printf("\n=== SIM Not Ready ===\n");
+        printf("\n===== SIM Not Ready =====\n");
         printf("Check: SIM inserted, seated properly, not locked\n\n");
 
         while (true) {

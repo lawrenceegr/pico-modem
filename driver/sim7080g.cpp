@@ -11,11 +11,10 @@ Sim7080G::Sim7080G() {
 }
 
 bool Sim7080G::start_modem() {
-    printf("\n=== Starting Modem ===\n");
+    printf("\n===== Starting Modem =====\n");
 
     if (boot_modem()) {
         config_modem();
-        printf("Modem ready\n");
         return true;
     } else {
         printf("ERROR: Modem boot failed\n");
@@ -62,6 +61,9 @@ bool Sim7080G::boot_modem() {
 void Sim7080G::config_modem() {
     // Set error reporting to 2, set modem to text mode, delete left-over SMS,
     // select LTE-only mode, select Cat-M only mode, set the APN
+
+    printf("\n===== Configuring Modem =====\n");
+    
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "AT+CMEE=2;+CMGF=1;+CMGD=,4;+CNMP=38;+CMNB=1;+CGDCONT=1,\"IP\",\"%s\"", NETWORK_APN);
     send_at(cmd);
@@ -69,9 +71,7 @@ void Sim7080G::config_modem() {
     // Set SST version, set SSL no verify, set header config
     send_at("AT+CSSLCFG=\"sslversion\",1,3;+SHSSL=1,\"\";+SHCONF=\"BODYLEN\",1024;+SHCONF=\"HEADERLEN\",350");
 
-    #ifdef DEBUG
-    printf("Modem configured for Cat-M and Super SIM\n");
-    #endif
+    printf("Modem configured for Cat-M and the APN set to \"%s\"\n", NETWORK_APN);
 } 
 
 void Sim7080G::toggle_module_power() {
@@ -81,7 +81,7 @@ void Sim7080G::toggle_module_power() {
 }
 
 bool Sim7080G::check_sim() {
-    printf("\n=== Checking SIM ===\n");
+    printf("\n===== Checking SIM =====\n");
 
     string response = send_at_response("AT+CPIN?", 1000);
 
@@ -99,7 +99,7 @@ bool Sim7080G::check_sim() {
 }
 
 void Sim7080G::get_sim_info() {
-    printf("\n=== SIM Info ===\n");
+    printf("\n===== SIM Info =====\n");
 
     printf("\nICCID:\n");
     send_at_response("AT+CCID", 1000);
@@ -121,7 +121,7 @@ void Sim7080G::get_sim_info() {
 }
 
 void Sim7080G::get_modem_info() {
-    printf("\n=== Modem Info ===\n");
+    printf("\n===== Modem Info =====\n");
 
     printf("\nManufacturer:\n");
     send_at_response("AT+CGMI", 1000);
