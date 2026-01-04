@@ -1,146 +1,105 @@
 ---
-title: "Understanding Cellular Modem Communication: A Journey from Abstraction to AT Commands"
-date: 2025-11-29
+title: "Registering a SIM Card to a Cellular Network with AT Commands"
+date: 2026-01-02
 author: Lawrence
-tags: [modem, cellular, iot, embedded, at-commands]
+tags: [modem, cellular, iot, embedded, at-commands, sim7080g, cat-m, nb-iot, lte-m]
 image:
     path: "/images/blog/rp2040-modem.jpg"
     alt: rp2040-modem-setup
 ---
 
-# Understanding Cellular Modem Communication: A Journey from Abstraction to AT Commands
+# Registering a SIM Card to a Cellular Network with AT Commands
 
-![RP2040 Modem Setup](../images/rp2040-modem.jpg)
+Getting a SIM card to register on a cellular network requires understanding the sequence of steps from power-on to network attachment. This post walks through the practical process using AT commands with Cat-M and NB-IoT modems, revealing what actually happens beneath framework abstractions and helping you diagnose issues when things go wrong.
 
-When adding cellular connectivity to embedded systems, developers face a choice: use high-level frameworks with convenient abstractions, or work directly with AT commands to understand exactly what's happening under the hood. This post explores the latter approachnot because it's always necessary, but because understanding the fundamentals of modem communication reveals critical insights often hidden by abstraction layers.
+The goal is simple: insert a SIM card, power on a modem, and get it registered to the network. But the steps to achieve this are often unclear when working with cellular modems for the first time.
 
-## The Problem with Abstractions
+## Why Work with AT Commands Directly?
 
-I initially attempted to integrate a SIM7080G Cat-M modem using Zephyr RTOS. The framework provided excellent abstractions that handled most of the heavy liftingnetwork registration, data connectivity, and socket operations worked almost out of the box. However, when issues arose, I found myself unable to diagnose problems effectively. What was the modem actually doing? Why did registration fail intermittently? What commands were being sent?
+High-level frameworks handle network registration automatically, which works well until something fails. When registration doesn't happen, framework error messages rarely explain why. Did the SIM fail to initialize? Is signal strength too weak? Is the APN wrong? Working directly with AT commands makes each step visible and debuggable.
 
-This lack of visibility motivated a different approach: strip away the frameworks and communicate directly with the modem using AT commands over UART. The goal wasn't to reinvent working solutions, but to understand the fundamental principles of cellular modem operation that apply regardless of which hardware, SDK, or framework you use.
+While there are alternative approaches to modem communication - such as using PPP (Point-to-Point Protocol) to establish a direct network interface - AT commands remain the most transparent method for understanding and controlling the registration process. PPP abstracts away the registration details, which can be convenient for production but limits visibility during development and troubleshooting.
 
-## Core Questions This Journey Answered
-
-Several fundamental questions drove this exploration:
-
-1. **Will standard consumer SIM cards work with industrial Cat-M modems?** Documentation often assumes carrier-specific IoT SIMs, but what about regular prepaid cards?
-
-2. **What information can we extract directly from a modem?** Beyond connectivity, what device and network data is accessible?
-
-3. **What are the actual timing requirements?** Abstractions hide critical delayshow long does a modem actually need to boot?
-
-4. **How does network registration really work?** What's the sequence from power-on to data-ready?
-
-5. **What happens when things go wrong?** How do you diagnose issues when you can't see the underlying commands?
+This isn't about avoiding frameworks entirely - it's about understanding what they're doing so you can troubleshoot effectively and make informed decisions about when abstractions help versus when they hide critical details.
 
 ## The Hayes AT Command Protocol
 
-At the heart of modem communication lies the Hayes command seta text-based protocol dating back to 1981 but still ubiquitous in cellular modems. Understanding this protocol is key to working with any modem, regardless of manufacturer.
-
-### Basic Structure
-
-AT commands follow simple patterns:
+Cellular modems communicate using AT commands - a text-based protocol that's been standard since 1981. Commands follow a simple pattern:
 
 ```
 AT+COMMAND[=parameters]
 ```
 
-Responses typically include:
-- Command echo (if echo enabled)
-- Response data
-- Final result code (`OK`, `ERROR`, or specific error)
-
-### Universal Commands
-
-Certain AT commands work across virtually all cellular modems:
-
-| Command | Purpose | Response |
-|---------|---------|----------|
-| `AT` | Test connectivity | `OK` |
-| `ATE0/ATE1` | Disable/enable echo | `OK` |
-| `AT+CPIN?` | Check SIM status | `+CPIN: READY` or PIN status |
-| `AT+CSQ` | Signal quality | `+CSQ: rssi,ber` |
-| `AT+CREG?` | Registration status | Network state |
-| `AT+CGMI` | Manufacturer | Vendor name |
-| `AT+CGMM` | Model | Model identifier |
-| `AT+CGSN` | IMEI | Device serial number |
-| `AT+COPS?` | Operator selection | Current network |
-
-These commands form the foundation of modem interaction across different platforms and hardware.
-
-### Command Categories
-
-AT commands generally fall into several categories:
-
-**Basic Commands** (no + prefix):
-- `AT`, `ATE0/1`, `ATI` - Basic control and information
-
-**General Commands** (3GPP TS 27.007):
-- `AT+CPIN`, `AT+CREG`, `AT+CSQ` - SIM, registration, signal
-- Standardized across all 3GPP-compliant modems
-
-**SMS Commands** (3GPP TS 27.005):
-- `AT+CMGS`, `AT+CMGR` - SMS transmission and reception
-
-**Data Commands** (3GPP TS 27.007):
-- `AT+CGDCONT`, `AT+CGACT` - PDP context definition and activation
-
-**Vendor-Specific Commands**:
-- Vary by manufacturer (e.g., SIMCom uses `AT+C...`, Quectel uses `AT+Q...`)
-- Provide access to proprietary features
-
-Understanding this categorization helps when working with unfamiliar modems—standard commands should work identically, while vendor commands require consulting datasheets.
-
-## The Critical Timing Challenge
-
-One of the most significant discoveries was the importance of timing in modem initializationsomething often handled invisibly by frameworks.
-
-### The Boot Sequence Mystery
-
-Cellular modems don't instantly respond to commands after power application. They require a boot sequence:
-
-1. **Power toggle**: A specific pulse width on the power enable pin (typically 1-2 seconds)
-2. **Internal boot**: Firmware initialization, hardware checks
-3. **AT command readiness**: The point where the modem responds to commands
-
-For the SIM7080G, documentation suggested approximately 30 seconds. However, real-world testing revealed the actual requirement was **35 seconds**. That five-second difference caused intermittent failures that were difficult to diagnosesometimes the modem responded, sometimes it didn't, with no obvious pattern.
-
-This illustrates a critical principle: **documented timing is often optimistic**. Real hardware requires safety margins, and abstractions that don't account for this can exhibit mysterious reliability issues.
-
-### Measuring Boot Time
-
-The actual boot time can be measured programmatically:
-
+Responses include the command result and a status code:
 ```
-1. Record timestamp before power toggle
-2. Toggle power enable pin
-3. Wait initial delay (35s in this case)
-4. Attempt AT command (e.g., ATE1)
-5. If no response, wait additional interval (4s)
-6. Retry with timeout (up to 20 attempts)
-7. On success, calculate elapsed time from timestamp
++COMMAND: response_data
+OK
 ```
 
-This measurement approach revealed that boot times varied from 35.1 to 37.8 seconds across multiple power cyclesdemonstrating why fixed delays need generous margins.
+Or on failure:
+```
+ERROR
+```
 
-### Why This Matters
+Most cellular modems support a core set of standardized 3GPP commands for SIM operations, network registration, and signal quality checks. Vendor-specific commands extend functionality but the basics remain consistent across manufacturers.
 
-Understanding boot timing is crucial when:
-- Implementing watchdog timers (must account for full boot duration)
-- Calculating battery life (boot current draw is significant)
-- Designing error recovery (distinguish between boot delay and failure)
-- Optimizing wake-from-sleep operations (different timing than cold boot)
+## Step 1: Power On and Modem Initialization
 
-Frameworks that hide this timing may silently incorporate delays you're unaware of, impacting your application's performance characteristics.
+Before any AT commands work, the modem must complete its boot sequence. This isn't instant - it requires powering the module correctly and waiting for initialization.
 
-## Working with SIM Cards: Consumer vs. IoT
+### Power Toggle Sequence
 
-A key question was whether standard consumer SIM cards would work with Cat-M modems, or if special IoT SIMs were required.
+Most cellular modems don't power on simply by applying voltage. They require a power enable pin to be pulsed:
 
-### SIM Status Check
+1. Pull power enable pin HIGH
+2. Hold for 1-2 seconds (consult datasheet)
+3. Pull power enable pin LOW
+4. Wait for modem boot
 
-The fundamental SIM verification command works across all modems:
+For the SIM7080G, this pulse is 1.5 seconds.
+
+### Boot Timing
+
+Documentation often understates actual boot time. The SIM7080G datasheet suggests ~30 seconds, but reliable operation requires at least 35 seconds before the first AT command attempt.
+
+Testing this programmatically:
+```
+1. Toggle power enable pin
+2. Wait 35 seconds
+3. Send AT command
+4. If no response, wait 4 seconds and retry
+5. Repeat up to 20 times
+```
+
+Measured boot times ranged from 35.1 to 37.8 seconds across multiple power cycles, confirming the need for conservative timing.
+
+### First Command Test
+
+The simplest AT command verifies the modem responds:
+
+```
+AT
+```
+
+Expected response:
+```
+OK
+```
+
+If you get no response, the modem hasn't completed boot. If you get garbled characters, check baud rate (typically 115200).
+
+Enable command echo for easier debugging:
+```
+ATE1
+```
+
+This echoes back every command you send, making it clear whether the modem received your input correctly.
+
+## Step 2: SIM Card Detection
+
+Once the modem responds to basic commands, verify SIM card presence and status.
+
+### Checking SIM Status
 
 ```
 AT+CPIN?
@@ -152,53 +111,121 @@ Possible responses:
 - `+CPIN: SIM PUK` - PUK required (PIN entered incorrectly 3 times)
 - `+CME ERROR: 10` - SIM not inserted
 
-### The Verdict: Consumer SIMs Work
+### Will Consumer SIM Cards Work?
 
-Testing with a standard Safaricom prepaid SIM revealed that consumer cards work perfectly with Cat-M modems, provided:
+A common question: do you need special IoT SIM cards, or will standard prepaid cards work?
 
-1. **Data plan active**: The SIM must have an active data subscription
-2. **Network compatibility**: Carrier must support Cat-M/LTE-M in your region
-3. **No PIN lock**: Either disabled, or you must send the PIN via `AT+CPIN=<pin>`
-4. **Correct APN**: Must configure the carrier's access point name
+Testing with a Safaricom consumer prepaid SIM card confirmed it works perfectly with Cat-M modems. Requirements:
+- Active data plan on the SIM
+- Network supports Cat-M/LTE-M in your region
+- PIN lock disabled (or unlock via `AT+CPIN=<pin>`)
+- Correct APN configured
 
-This is significant because IoT-specific SIMs often carry premium pricing, while standard prepaid cards can be substantially cheaper for development and low-volume deployments.
+This matters because IoT-specific SIMs often cost significantly more than standard prepaid cards. For development and low-volume deployments, consumer SIMs are viable.
 
-### Understanding APN Configuration
+### Enable Verbose Errors
 
-The Access Point Name (APN) is critical but often misunderstood. It's essentially the "gateway" between the cellular network and the internet. Think of it as a router configuration:
+Before proceeding, enable detailed error reporting:
 
 ```
-[Your Device] <-> [Cellular Network] <-> [APN Gateway] <-> [Internet]
+AT+CMEE=2
 ```
 
-Each carrier has specific APNs for different service types:
-- **Consumer mobile data**: `internet`, `web.gprs.mtnnigeria.net`, `safaricom`
-- **IoT/M2M**: `iot.carrier.com`, `m2m.carrier.com`
-- **Private networks**: Custom APNs for enterprise deployments
+This changes generic `ERROR` responses to specific error codes like `+CME ERROR: 30` (no network service), making diagnosis much easier.
 
-The APN configuration command structure:
+## Step 3: Network Mode Configuration
+
+Before registration can succeed, the modem needs to know which network technology to use. This is vendor-specific configuration.
+
+### For SIM7080G (Cat-M/NB-IoT Modem):
+
+**Set LTE-only mode:**
 ```
-AT+CGDCONT=<cid>,"<protocol>","<apn>"[,<address>]
+AT+CNMP=38
+```
+
+**Select network mode with AT+CMNB:**
+```
+AT+CMNB=1  # Cat-M only
+AT+CMNB=2  # NB-IoT only
+AT+CMNB=3  # Both Cat-M and NB-IoT (automatic selection)
+```
+
+These commands tell the modem which LPWA technology to use:
+- **Cat-M (LTE-M)**: Higher bandwidth (~375 kbps downlink), better for moderate data, voice support, mobility. Good for asset tracking, wearables.
+- **NB-IoT**: Lower power consumption, better coverage indoors/underground, slower speeds (~60 kbps). Good for static sensors, smart meters.
+- **Both (AT+CMNB=3)**: Automatic selection. Recommended for development as it provides most reliable connectivity by allowing the module to choose the best available network.
+
+If your carrier doesn't support the configured mode, or if you configure the wrong mode, registration will fail even with good signal. Check your carrier's network support before deployment.
+
+### For Standard GSM/GPRS/3G Modems:
+
+Modems that support traditional cellular networks (2G/3G/4G) typically use different configuration commands. For example:
+
+**Set network mode with AT+CNMP (varies by vendor):**
+```
+AT+CNMP=2   # Automatic (GSM/GPRS/LTE)
+AT+CNMP=13  # GSM only
+AT+CNMP=14  # WCDMA only
+AT+CNMP=38  # LTE only
+```
+
+**Or using AT+CMODE:**
+```
+AT+CMODE=0  # Automatic mode selection
+AT+CMODE=2  # GSM only
+```
+
+The specific commands and parameters vary by manufacturer. Consult your modem's AT command manual - the principle remains the same: specify which radio technology to use.
+
+## Step 4: Access Point Name (APN) Configuration
+
+The APN is the gateway between the cellular network and the internet. Think of it as a router configuration that tells the network where to route your data traffic.
+
+### Configure the APN
+
+```
+AT+CGDCONT=1,"IP","<apn>"
 ```
 
 Where:
-- `<cid>`: Context identifier (usually 1)
-- `<protocol>`: IP protocol type ("IP" for IPv4, "IPV6", "IPV4V6")
-- `<apn>`: The access point name string
-- `<address>`: Optional static IP (usually omitted for dynamic assignment)
+- `1` is the context ID (usually 1)
+- `"IP"` specifies IPv4 (can also be "IPV6" or "IPV4V6")
+- `"<apn>"` is your carrier's access point name
 
-**Common mistake**: Using the wrong APN results in successful network registration (`AT+CREG?` returns 0,1) but failed data connection (`AT+CGACT?` shows context inactive). The modem can attach to the network but cannot route data.
+### Finding the Correct APN
 
-## Network Registration: The Hidden Complexity
+Carrier APNs are usually documented on their websites. Common examples:
+- **Safaricom (Kenya)**: `safaricom`
+- **Airtel**: `internet`
 
-Network registration is the process by which a modem connects to a cellular networka multi-step sequence that abstractions typically hide entirely.
+For the tested Safaricom SIM:
+```
+AT+CGDCONT=1,"IP","safaricom"
+```
 
-### Registration States
+**Common mistake:** Using an IoT/M2M APN with a consumer SIM (or vice versa) causes registration success but data connection failure. The network mode, SIM type, and APN must all align.
 
-The `AT+CREG?` command reveals registration status:
+## Step 5: Network Registration
+
+With configuration complete, initiate network registration.
+
+### Automatic Operator Selection
+
+```
+AT+COPS=0
+```
+
+This tells the modem to automatically select and register to an available network. Manual selection is possible but rarely necessary.
+
+### Monitoring Registration Status
 
 ```
 AT+CREG?
+```
+
+Response format:
+```
 +CREG: <n>,<stat>
 ```
 
@@ -207,419 +234,295 @@ Where `<stat>` indicates:
 - `1` - Registered, home network
 - `2` - Not registered, searching
 - `3` - Registration denied
-- `4` - Unknown (e.g., out of coverage)
+- `4` - Unknown (out of coverage)
 - `5` - Registered, roaming
 
-### The Registration Sequence
+**Important:** Registration is not instant. Even with good signal, expect 30-120 seconds for `<stat>` to reach `1` or `5`.
 
-Achieving registered status requires configuration before registration can succeed:
+### Checking Signal Strength
 
-1. **Set network mode** (LTE-only vs. fallback to 2G/3G)
-2. **Configure APN** (carrier-specific access point name)
-3. **Select operator** (automatic or manual)
-4. **Wait for registration** (can take 30-120 seconds)
-5. **Verify signal quality** (ensure adequate signal strength)
-
-For the SIM7080G example:
-
-```
-AT+CNMP=38          # Select LTE mode only
-AT+CMNB=1           # Select Cat-M (not NB-IoT)
-AT+CGDCONT=1,"IP","safaricom"  # Configure APN
-AT+COPS=0           # Automatic operator selection
-```
-
-After configuration, registration isn't instantit can take 30 seconds to 2 minutes depending on signal conditions and network load.
-
-### Why Registration Fails
-
-Common failure modes discovered through direct AT interaction:
-
-**Signal too weak:**
-```
-AT+CSQ
-+CSQ: 99,99    # 99 indicates no signal
-```
-Signal strength below 10 (on 0-31 scale) often prevents registration.
-
-**Wrong APN:**
-```
-AT+CGDCONT?
-+CGDCONT: 1,"IP","wrong-apn"...
-```
-Incorrect APN configuration is invisible to the modem until data connection attempts fail.
-
-**Network mode mismatch:**
-If modem configured for Cat-M but carrier only supports NB-IoT (or vice versa), registration will fail with `+CREG: 0,3` (denied).
-
-Understanding these failure modes allows targeted diagnostics impossible when abstractions simply report "connection failed."
-
-### Signal Strength Interpretation
-
-The `AT+CSQ` command returns signal strength, but interpreting the values requires understanding the scale:
+While waiting for registration, verify signal quality:
 
 ```
 AT+CSQ
-+CSQ: 17,99
 ```
 
-The first parameter is RSSI (Received Signal Strength Indicator):
-
-| RSSI Value | Signal Strength | Interpretation |
-|------------|-----------------|----------------|
-| 0 | -113 dBm or less | No signal |
-| 1 | -111 dBm | Very poor |
-| 2-9 | -109 to -95 dBm | Poor |
-| 10-14 | -93 to -85 dBm | OK |
-| 15-19 | -83 to -75 dBm | Good |
-| 20-30 | -73 to -53 dBm | Excellent |
-| 31 | -51 dBm or greater | Excellent |
-| 99 | Unknown/not detectable | Error condition |
-
-The second parameter is BER (Bit Error Rate), typically 99 for "not known" on modern LTE modems.
-
-**Practical guidance**: Values below 10 often cause connection instability. Values above 15 are generally reliable for data transmission. If you see persistent values below 10, investigate:
-- Antenna connection
-- Antenna placement (near windows, away from metal)
-- Carrier coverage maps
-- Indoor vs outdoor performance
-
-## Extracting Information: What Modems Reveal
-
-Beyond connectivity, modems expose substantial information about themselves and the networkdata valuable for diagnostics, asset tracking, and compliance.
-
-### Device Information
-
-These commands work across virtually all cellular modems:
-
-**Manufacturer and Model:**
+Response:
 ```
-AT+CGMI   # Returns manufacturer (e.g., "SIMCOM INCORPORATED")
-AT+CGMM   # Returns model (e.g., "SIMCOM_SIM7080G")
++CSQ: <rssi>,<ber>
 ```
 
-**Firmware Version:**
-```
-AT+CGMR   # Returns firmware revision
-```
-Critical for identifying firmware-specific bugs and determining update requirements.
+The `<rssi>` value indicates signal strength on a 0-31 scale:
+- `0-9`: Poor signal (may prevent registration)
+- `10-14`: Adequate signal
+- `15-19`: Good signal
+- `20-31`: Excellent signal
+- `99`: No signal or unknown
 
-**IMEI (International Mobile Equipment Identity):**
-```
-AT+CGSN   # Returns 15-digit IMEI
-```
-Unique device identifier, required for regulatory compliance and device tracking.
+The second parameter (`<ber>`) is typically `99` meaning "not known" on LTE modems.
 
-### SIM and Subscriber Information
+If signal is below 10, registration may fail or be unreliable. Check antenna connection and placement.
 
-**ICCID (SIM Card Number):**
-```
-AT+CCID   # Returns 19-20 digit SIM identifier
-```
+### Verifying Network Operator
 
-**IMSI (International Mobile Subscriber Identity):**
-```
-AT+CIMI   # Returns subscriber identifier
-```
-Identifies the subscription, not the SIM hardware. Useful for verifying correct SIM insertion.
+Once registered, confirm the network:
 
-**Phone Number:**
-```
-AT+CNUM   # Returns MSISDN if stored on SIM
-```
-Note: Not all carriers store the phone number on SIM; may return empty.
-
-### Network Information
-
-**Current Operator:**
 ```
 AT+COPS?
+```
+
+Response:
+```
 +COPS: 0,0,"Safaricom",7
 ```
-Shows selected network and access technology (7 = E-UTRAN/LTE).
 
-**Signal Quality:**
-```
-AT+CSQ
-+CSQ: 17,99
-```
-First number is RSSI (0-31 scale, 31 = best), second is bit error rate (99 = not known/not detectable).
+The `7` indicates E-UTRAN (LTE), confirming the modem registered on an LTE network.
 
-**Cell Tower Information:**
-```
-AT+CEREG?   # Extended registration info with cell ID
-```
-Some modems provide cell tower ID, enabling rough location determination without GPS.
+## Step 6: Data Context Activation
 
-### Why Direct Access Matters
+Registration means the modem has attached to the network, but data connectivity requires activating a PDP (Packet Data Protocol) context.
 
-Frameworks often expose only a subset of this information, or require specific API calls that vary by platform. Understanding the underlying AT commands allows:
-
-- Consistent data access across different hardware platforms
-- Custom logging for diagnostics and compliance
-- Verification of framework behavior
-- Building lightweight alternatives when full frameworks are overkill
-
-## Command Optimization: Efficiency Matters
-
-An important discovery was that AT command efficiency directly impacts initialization time and power consumption.
-
-### Sequential vs. Chained Commands
-
-Initial implementation sent commands individually:
+### Check Context Status
 
 ```
-AT+CMEE=2    (wait for OK)
-AT+CMGF=1    (wait for OK)
-AT+CNMP=38   (wait for OK)
-...
+AT+CGACT?
 ```
 
-With typical command response times of 200-500ms, configuration took ~8 seconds.
-
-### Command Chaining
-
-Most modems support semicolon-based command chaining:
-
+Response:
 ```
-AT+CMEE=2;+CMGF=1;+CNMP=38;+CMNB=1;+CGDCONT=1,"IP","safaricom"
++CGACT: 1,1
 ```
 
-Same configuration completes in ~2 secondsa 75% reduction. For battery-powered devices that configure on each wake cycle, this difference is substantial.
+Format: `+CGACT: <cid>,<state>`
+- `<cid>`: Context ID (1 in this case)
+- `<state>`: 0 = inactive, 1 = active
 
-**Important:** Not all commands can be chained. Commands that return multiple lines of data or take extended processing time may fail when chained. Test thoroughly.
+If the context shows `0` (inactive) despite successful registration, the APN is likely incorrect.
 
-## Power Management Considerations
+## Common Registration Failures and Diagnosis
 
-Understanding power states and transitions is crucial for battery-powered applications.
+### SIM Not Detected
 
-### Power State Transitions
-
-Modems typically support several power states:
-
-- **Off**: No power, requires full boot sequence
-- **Sleep/Low-power**: Main systems powered down, minimal current (~5-50�A)
-- **Idle**: Registered to network, ready for data (~2-5mA)
-- **Active**: Transmitting/receiving data (~200-400mA, peaks to 2A)
-
-### Wake/Sleep Commands
-
-Enable low-power mode:
-```
-AT+CSCLK=1   # Enable automatic sleep
-```
-
-Configure wake behavior:
-```
-AT+CPSMS=1,,,<T3412>,<T3324>   # Power-saving mode with timers
-```
-
-The actual implementation of sleep modes varies significantly by modem model, but these commands provide starting points for investigation.
-
-### Why This Matters for Abstractions
-
-Many high-level frameworks don't expose fine-grained power control, instead managing sleep automatically based on activity. This can be ideal for simplicity but problematic for:
-
-- Applications with strict power budgets
-- Predictable wake/transmit schedules
-- Ultra-low-power intermittent operation
-
-Understanding the underlying power commands allows evaluation of whether framework-managed power is suitable or custom control is necessary.
-
-## Communication Fundamentals: UART Considerations
-
-Regardless of hardware platform, certain UART configuration principles apply universally.
-
-### Critical Settings
-
-**Baud Rate:**
-Most cellular modems default to 115200 baud, though many support automatic baud detection. Higher rates (230400, 460800) are possible but unnecessary for AT commands and increase error sensitivity.
-
-**Flow Control:**
-Hardware flow control (CTS/RTS) is typically optional for AT commands. Enable only if:
-- High-speed data transfer planned
-- Operating in electrically noisy environments
-- Modem documentation specifically requires it
-
-Many simple implementations work reliably without flow control at 115200 baud.
-
-**Data Format:**
-Standard configuration is 8N1 (8 data bits, no parity, 1 stop bit). Deviating from this is rarely necessary.
-
-### Response Buffering and Parsing
-
-AT responses vary in length from simple `OK` (4 bytes with CRLF) to multi-line output (e.g., cell tower lists can exceed 1KB). Buffer sizing requires consideration:
-
-- **Minimum**: 256 bytes (sufficient for simple queries)
-- **Typical**: 512-1024 bytes (handles most standard commands)
-- **Large data operations**: 2048+ bytes (HTTP responses, SMS, etc.)
-
-**Response format example**:
-```
-AT+COPS?<CR><LF>           # Command echo (if ATE1)
-<CR><LF>                    # Blank line
-+COPS: 0,0,"Safaricom",7<CR><LF>   # Response data
-<CR><LF>                    # Blank line
-OK<CR><LF>                  # Final result code
-```
-
-**Parsing considerations**:
-1. **Line terminators**: Responses use `<CR><LF>` (carriage return + line feed), requiring both characters for proper line detection
-2. **Empty lines**: Often appear before and after response data
-3. **Echo handling**: If echo is enabled, the first line is the command itself
-4. **Unsolicited messages**: Modems may inject status messages (`+CREG: 1`, `CONNECT`, etc.) at any time
-
-**Efficient parsing strategy**:
-```
-1. Read until timeout or final result code (OK/ERROR)
-2. Split response into lines by <CR><LF>
-3. Filter out empty lines and echo
-4. Extract data lines (those starting with +)
-5. Parse result code
-```
-
-This approach handles the variability in modem responses across different manufacturers.
-
-### Timeout Management
-
-Different commands require different timeouts:
-
-| Command Type | Typical Timeout | Reason |
-|--------------|-----------------|---------|
-| Simple queries (AT, ATE1) | 500ms | Immediate response |
-| SIM operations (AT+CPIN?) | 1000ms | SIM card access |
-| Network queries (AT+COPS?) | 2000-5000ms | Network interaction |
-| Data operations | 10000-60000ms | Server communication |
-
-Abstractions often use conservative (long) timeouts, increasing response latency. Direct implementation allows optimization based on actual requirements.
-
-## Diagnostics: What Can Go Wrong
-
-Direct AT command access reveals failure modes that abstractions may report only as generic errors.
-
-### Common Issues and AT-Based Diagnosis
-
-**No response to any AT command:**
-- Check physical UART connections (TX/RX swapped is common)
-- Verify baud rate match
-- Confirm modem has power and completed boot sequence
-- Test with simplest possible command: `AT` (not `AT+...`)
-
-**Modem responds but SIM not detected:**
+**Symptom:**
 ```
 AT+CPIN?
-+CME ERROR: 10   # SIM not inserted
++CME ERROR: 10
 ```
-- Verify physical SIM insertion and orientation
-- Check SIM contacts (corrosion, debris)
-- Try SIM in phone to verify it's not defective
 
-**SIM detected but registration fails:**
-```
-AT+CREG?
-+CREG: 0,2   # Not registered, searching
-```
-Check signal:
+**Causes:**
+- SIM not physically inserted
+- SIM inserted incorrectly (check orientation)
+- Dirty or damaged SIM contacts
+- Defective SIM card
+
+**Diagnosis:** Try the SIM in a phone to verify it's functional.
+
+### No Signal
+
+**Symptom:**
 ```
 AT+CSQ
-+CSQ: 99,99   # No signal
++CSQ: 99,99
 ```
-- Verify antenna connection
-- Check carrier coverage in area
-- Confirm SIM has active service
-- Verify correct network mode (AT+CNMP) and APN configuration
 
-**Registration succeeds but data fails:**
+**Causes:**
+- No antenna connected
+- Antenna poorly positioned (indoors, metal shielding)
+- Out of carrier coverage area
+
+**Diagnosis:** Move the device near a window or outdoors. Check antenna connection.
+
+### Registration Fails - Searching
+
+**Symptom:**
 ```
 AT+CREG?
-+CREG: 0,1   # Registered
++CREG: 0,2
+```
+
+Remains in state `2` (searching) indefinitely.
+
+**Causes:**
+- Weak signal (check with `AT+CSQ`)
+- Wrong network mode (Cat-M vs NB-IoT mismatch with carrier support)
+- Carrier doesn't support selected technology in your region
+
+**Diagnosis:** Verify signal strength is adequate. Confirm carrier supports your selected mode (Cat-M or NB-IoT) in your region. Try `AT+CMNB=3` to allow automatic selection between both technologies.
+
+### Registration Denied
+
+**Symptom:**
+```
+AT+CREG?
++CREG: 0,3
+```
+
+**Causes:**
+- SIM not activated or data plan expired
+- Network mode incompatible with carrier
+- SIM locked to different carrier (if used SIM)
+
+**Diagnosis:** Verify SIM has active service. Try the SIM in a phone to confirm it can access data.
+
+### Registered But No Data
+
+**Symptom:**
+```
+AT+CREG?
++CREG: 0,1
 
 AT+CGACT?
-+CGACT: 1,0  # PDP context not active
-```
-Indicates registration without data connectionoften wrong APN or no data plan.
-
-### Verbose Error Reporting
-
-Enable detailed error messages:
-```
-AT+CMEE=2   # Verbose error reporting
++CGACT: 1,0
 ```
 
-Instead of generic `ERROR`, you'll receive specific codes:
-```
-+CME ERROR: 30   # No network service
-+CME ERROR: 50   # Incorrect parameters
-```
+Registered successfully but PDP context inactive.
 
-Consult modem documentation for error code meaningsthis level of detail is invaluable for diagnostics.
+**Causes:**
+- Incorrect APN configured
+- SIM has no data plan
+- APN type mismatch (consumer APN with IoT SIM)
 
-## When to Use Abstractions vs. Direct Commands
+**Diagnosis:** Double-check APN spelling and verify data plan is active.
 
-This exploration doesn't argue against using frameworksthey exist for good reasons. Instead, it clarifies when each approach is appropriate.
+## Practical Implementation Example
 
-### Use High-Level Frameworks When:
+The code implementing this registration sequence is available at:
+https://github.com/learnqtkenya/pico-modem
 
-- Rapid development is priority over understanding
-- Standard use cases (simple data connectivity)
-- Cross-platform portability needed
-- Team unfamiliar with AT commands
-- Well-supported modem/framework combination
-
-### Use Direct AT Commands When:
-
-- Debugging framework issues
-- Non-standard modem features needed
-- Minimal code footprint required
-- Custom power management critical
-- Learning how modems actually work
-- Abstraction overhead unacceptable
-
-### Hybrid Approach
-
-Often optimal: use frameworks for standard operations but maintain ability to send raw AT commands for:
-- Diagnostics
-- Accessing vendor-specific features
-- Power management
-- Extracting extended information
-
-## Example Implementation
-
-For those interested in seeing these principles applied, a reference implementation using an RP2040 microcontroller and SIM7080G modem is available:
-
-**GitHub:** https://github.com/lawrenceegr/pico-modem
-
-This implementation demonstrates:
-- Minimal UART configuration
-- AT command handling with proper timeouts
-- Network registration verification
-- Information extraction (IMEI, ICCID, signal, etc.)
-- Boot timing measurement
+The implementation demonstrates:
+- Power toggle timing (1.5s pulse)
+- Boot delay (35s) with retry logic
+- SIM status verification
+- Network registration monitoring
 - Visual feedback via LED patterns
 
-The code is intentionally straightforward, prioritizing clarity over optimization, making it suitable for learning and adaptation to other platforms.
+Key functions:
+- `boot_modem()`: Handles power toggle and boot timing
+```c
+bool Sim7080G::boot_modem() {
+    bool powered = false;
+    uint32_t attempts = 0;
+    uint32_t start_time = time_us_32();
+
+    while (attempts < 20) {
+        if (send_at("ATE1")) {
+            // #ifdef DEBUG
+            printf("Modem ready after %i ms\n", (time_us_32() - start_time) / 1000);
+            // #endif
+
+            return true;
+        }
+        if (!powered) {
+            printf("Toggling power...\n");
+            toggle_module_power();
+            powered = true;
+            // Wait 35s for modem to boot before first AT command
+            printf("Waiting 35s for modem boot...\n");
+            sleep_ms(35000);
+        }
+        
+        sleep_ms(4000);
+        attempts++;
+    }
+
+    return false;
+}
+```
+- `check_sim()`: Verifies SIM presence with `AT+CPIN?`
+```c
+bool Sim7080G::check_sim() {
+    printf("\n===== Checking SIM =====\n");
+
+    string response = send_at_response("AT+CPIN?", 1000);
+
+    if (response.find("READY") != string::npos) {
+        printf("SIM: READY\n");
+        return true;
+    } else if (response.find("SIM PIN") != string::npos) {
+        printf("SIM: PIN REQUIRED\n");
+    } else if (response.find("SIM PUK") != string::npos) {
+        printf("SIM: PUK REQUIRED\n");
+    } else {
+        printf("SIM: NOT DETECTED\n");
+    }
+    return false;
+}
+```
+- `config_modem()`: Sets network mode and APN
+```c
+
+#define NETWORK_APN   "safaricom"
+
+void Sim7080G::config_modem() {
+    // Set error reporting to 2, set modem to text mode, delete left-over SMS,
+    // select LTE-only mode, select Cat-M only mode (use CMNB=2 for NB-IoT, CMNB=3 for both), set the APN
+
+    printf("\n===== Configuring Modem =====\n");
+
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd), "AT+CMEE=2;+CMGF=1;+CMGD=,4;+CNMP=38;+CMNB=1;+CGDCONT=1,\"IP\",\"%s\"", NETWORK_APN);
+    send_at(cmd);
+
+    // Set SST version, set SSL no verify, set header config
+    send_at("AT+CSSLCFG=\"sslversion\",1,3;+SHSSL=1,\"\";+SHCONF=\"BODYLEN\",1024;+SHCONF=\"HEADERLEN\",350");
+
+    printf("Modem configured for Cat-M and the APN set to \"%s\"\n", NETWORK_APN);
+}
+```
+- `get_sim_info()`: Displays ICCID, IMSI, operator, signal, registration status
+```c
+void Sim7080G::get_sim_info() {
+    printf("\n===== SIM Info =====\n");
+
+    printf("\nICCID:\n");
+    send_at_response("AT+CCID", 1000);
+
+    printf("\nIMSI:\n");
+    send_at_response("AT+CIMI", 1000);
+
+    printf("\nPhone Number:\n");
+    send_at_response("AT+CNUM", 1000);
+
+    printf("\nOperator:\n");
+    send_at_response("AT+COPS?", 2000);
+
+    printf("\nSignal:\n");
+    send_at_response("AT+CSQ", 1000);
+
+    printf("\nRegistration:\n");
+    send_at_response("AT+CREG?", 1000);
+}
+```
+The code prioritizes clarity over optimization, making it suitable for learning and adaptation to other platforms.
 
 ## Key Takeaways
 
-1. **Timing is critical**: Documented delays are often optimistic; measure actual requirements and add safety margins.
+**Boot timing matters.** Documentation often understates actual requirements. The SIM7080G needs 35+ seconds, not the documented 30. Always add margin.
 
-2. **Consumer SIM cards work**: Special IoT SIMs are not always necessary; standard prepaid cards function with appropriate configuration.
+**Consumer SIMs work.** Special IoT SIM cards aren't always necessary. Standard prepaid cards function with proper APN configuration and active data plans.
 
-3. **AT commands are universal**: Mastering basic AT commands provides diagnostic capability across platforms and hardware.
+**APN is critical.** Wrong APN causes registration success but data failure - a confusing symptom to debug without AT command visibility.
 
-4. **Registration is complex**: Network attachment requires proper configuration and can take significant time; failures have specific, diagnosable causes.
+**Registration takes time.** Even with perfect configuration and strong signal, expect 30-120 seconds for network attachment. Impatience leads to false failure diagnoses.
 
-5. **Information is accessible**: Modems expose extensive data about devices, subscribers, and networks through standardized commands.
+**Signal strength matters.** RSSI below 10 causes intermittent issues. Below 5 usually prevents registration entirely. Check antenna connection first.
 
-6. **Optimization matters**: Command chaining and efficient sequencing reduce initialization time and power consumption.
+**Verbose errors help.** Enable `AT+CMEE=2` immediately. Generic `ERROR` responses hide the actual problem.
 
-7. **Abstractions hide complexity**: Frameworks simplify development but can obscure critical details needed for debugging and optimization.
+Working directly with AT commands strips away abstraction convenience, but reveals exactly what's happening at each step. This knowledge applies regardless of hardware platform or framework - the fundamentals of cellular registration remain constant. When frameworks fail, understanding AT commands transforms debugging from guesswork into systematic diagnosis.
 
-## Conclusion
+## References and Further Reading
 
-Working directly with AT commands and UART communication strips away the convenience of high-level abstractions, but the insights gained are invaluable. Understanding actual modem behaviorboot timing, registration sequences, command responsesprovides diagnostic capabilities and optimization opportunities that remain hidden when relying solely on frameworks.
+### Official Documentation
+- [SIM7070/SIM7080/SIM7090 Series AT Command Manual V1.04](https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/docs/datasheet/unit/sim7080g/en/SIM7070_SIM7080_SIM7090%20Series_AT%20Command%20Manual_V1.04.pdf) - Complete AT command reference
+- [SIM7080G Hardware Design Manual](https://www.texim-europe.com/Cmsfile/SMM-SIM7080G-Hardware-Design-V1.04-DS-200525-TE.pdf) - Power sequence and electrical specifications
+- [SIM7080 Series Specification](https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/docs/datasheet/unit/sim7080g/en/SIM7080_Series_SPEC_20200427.pdf) - Module specifications
 
-This knowledge applies broadly: whether using Zephyr, FreeRTOS, Arduino, or bare-metal implementations, the fundamental principles of cellular modem communication remain constant. The specific APIs and abstractions change, but AT commands persist as the universal language of modem interaction.
+### AT Command References
+- [AT+CMNB – Preferred Selection between CAT-M and NB-IoT](https://m2msupport.net/m2msupport/atcmnb-preferred-selection-between-cat-m-and-nb-iot/) - Network mode configuration
+- [AT+CSQ – Signal Quality](https://m2msupport.net/m2msupport/atcsq-signal-quality/) - RSSI interpretation and signal strength
+- [Signal Quality Reference](https://m2msupport.net/m2msupport/signal-quality/) - Understanding cellular signal metrics
 
-For production systems, use whatever tools and frameworks make sense for your requirements. But when things go wrong, or when you need capabilities beyond what abstractions provide, understanding what's actually happening at the AT command level transforms debugging from guesswork into systematic diagnosis.
-
+### Hardware Resources
+- [Waveshare SIM7080G Cat-M/NB-IoT HAT Wiki](https://www.waveshare.com/wiki/SIM7080G_Cat-M/NB-IoT_HAT) - Hardware implementation examples
+- [Waveshare Pico SIM7080G Wiki](https://www.waveshare.com/wiki/Pico-SIM7080G-Cat-M/NB-IoT) - Raspberry Pi Pico integration
