@@ -3,7 +3,7 @@
 #include "hardware/gpio.h"
 #include "hardware/uart.h"
 #include "config.h"
-#include "driver/sim7080g.h"
+#include "driver/modem.h"
 
 void uart_init_modem()
 {
@@ -40,7 +40,7 @@ void setup_modem_power_pin()
     gpio_put(PIN_MODEM_PWR, false);
 }
 
-Sim7080G modem;
+SimA7670E modem;
 
 void setup()
 {
@@ -55,7 +55,7 @@ int main()
     // Set up the hardware
     setup();
 
-    printf("\n===== Pi Modem - SIM7080G Firmware =====\n");
+    printf("\n===== Pi Modem - SIMA7670E Firmware =====\n");
     printf("Build: %s %s\n\n", __DATE__, __TIME__);
 
     led_blink(3, 150);

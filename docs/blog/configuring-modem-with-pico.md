@@ -2,7 +2,7 @@
 title: "Registering a SIM Card to a Cellular Network with AT Commands"
 date: 2026-01-02
 author: Lawrence
-tags: [modem, cellular, iot, embedded, at-commands, sim7080g, cat-m, nb-iot, lte-m]
+tags: [modem, cellular, iot, embedded, at-commands, sima7670e, cat-m, nb-iot, lte-m]
 image:
     path: "/images/blog/rp2040-modem.jpg"
     alt: rp2040-modem-setup
@@ -56,11 +56,11 @@ Most cellular modems don't power on simply by applying voltage. They require a p
 3. Pull power enable pin LOW
 4. Wait for modem boot
 
-For the SIM7080G, this pulse is 1.5 seconds.
+For the SIMA7670E, this pulse is 1.5 seconds.
 
 ### Boot Timing
 
-Documentation often understates actual boot time. The SIM7080G datasheet suggests ~30 seconds, but reliable operation requires at least 35 seconds before the first AT command attempt.
+Documentation often understates actual boot time. The SIMA7670E datasheet suggests ~30 seconds, but reliable operation requires at least 35 seconds before the first AT command attempt.
 
 Testing this programmatically:
 ```
@@ -137,7 +137,7 @@ This changes generic `ERROR` responses to specific error codes like `+CME ERROR:
 
 Before registration can succeed, the modem needs to know which network technology to use. This is vendor-specific configuration.
 
-### For SIM7080G (Cat-M/NB-IoT Modem):
+### For SIMA7670E (Cat-M/NB-IoT Modem):
 
 **Set LTE-only mode:**
 ```
@@ -399,7 +399,7 @@ The implementation demonstrates:
 Key functions:
 - `boot_modem()`: Handles power toggle and boot timing
 ```c
-bool Sim7080G::boot_modem() {
+bool SimA7670E::boot_modem() {
     bool powered = false;
     uint32_t attempts = 0;
     uint32_t start_time = time_us_32();
@@ -430,7 +430,7 @@ bool Sim7080G::boot_modem() {
 ```
 - `check_sim()`: Verifies SIM presence with `AT+CPIN?`
 ```c
-bool Sim7080G::check_sim() {
+bool SimA7670E::check_sim() {
     printf("\n===== Checking SIM =====\n");
 
     string response = send_at_response("AT+CPIN?", 1000);
@@ -453,7 +453,7 @@ bool Sim7080G::check_sim() {
 
 #define NETWORK_APN   "safaricom"
 
-void Sim7080G::config_modem() {
+void SimA7670E::config_modem() {
     // Set error reporting to 2, set modem to text mode, delete left-over SMS,
     // select LTE-only mode, select Cat-M only mode (use CMNB=2 for NB-IoT, CMNB=3 for both), set the APN
 
@@ -471,7 +471,7 @@ void Sim7080G::config_modem() {
 ```
 - `get_sim_info()`: Displays ICCID, IMSI, operator, signal, registration status
 ```c
-void Sim7080G::get_sim_info() {
+void SimA7670E::get_sim_info() {
     printf("\n===== SIM Info =====\n");
 
     printf("\nICCID:\n");
@@ -497,7 +497,7 @@ The code prioritizes clarity over optimization, making it suitable for learning 
 
 ## Key Takeaways
 
-**Boot timing matters.** Documentation often understates actual requirements. The SIM7080G needs 35+ seconds, not the documented 30. Always add margin.
+**Boot timing matters.** Documentation often understates actual requirements. The SIMA7670E needs 35+ seconds, not the documented 30. Always add margin.
 
 **Consumer SIMs work.** Special IoT SIM cards aren't always necessary. Standard prepaid cards function with proper APN configuration and active data plans.
 
@@ -514,9 +514,9 @@ Working directly with AT commands strips away abstraction convenience, but revea
 ## References and Further Reading
 
 ### Official Documentation
-- [SIM7070/SIM7080/SIM7090 Series AT Command Manual V1.04](https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/docs/datasheet/unit/sim7080g/en/SIM7070_SIM7080_SIM7090%20Series_AT%20Command%20Manual_V1.04.pdf) - Complete AT command reference
-- [SIM7080G Hardware Design Manual](https://www.texim-europe.com/Cmsfile/SMM-SIM7080G-Hardware-Design-V1.04-DS-200525-TE.pdf) - Power sequence and electrical specifications
-- [SIM7080 Series Specification](https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/docs/datasheet/unit/sim7080g/en/SIM7080_Series_SPEC_20200427.pdf) - Module specifications
+- [SIM7070/SIM7080/SIM7090 Series AT Command Manual V1.04](https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/docs/datasheet/unit/simA7670E/en/SIM7070_SIM7080_SIM7090%20Series_AT%20Command%20Manual_V1.04.pdf) - Complete AT command reference
+- [SIMA7670E Hardware Design Manual](https://www.texim-europe.com/Cmsfile/SMM-SIMA7670E-Hardware-Design-V1.04-DS-200525-TE.pdf) - Power sequence and electrical specifications
+- [SIM7080 Series Specification](https://m5stack.oss-cn-shenzhen.aliyuncs.com/resource/docs/datasheet/unit/simA7670E/en/SIM7080_Series_SPEC_20200427.pdf) - Module specifications
 
 ### AT Command References
 - [AT+CMNB – Preferred Selection between CAT-M and NB-IoT](https://m2msupport.net/m2msupport/atcmnb-preferred-selection-between-cat-m-and-nb-iot/) - Network mode configuration
@@ -524,5 +524,5 @@ Working directly with AT commands strips away abstraction convenience, but revea
 - [Signal Quality Reference](https://m2msupport.net/m2msupport/signal-quality/) - Understanding cellular signal metrics
 
 ### Hardware Resources
-- [Waveshare SIM7080G Cat-M/NB-IoT HAT Wiki](https://www.waveshare.com/wiki/SIM7080G_Cat-M/NB-IoT_HAT) - Hardware implementation examples
-- [Waveshare Pico SIM7080G Wiki](https://www.waveshare.com/wiki/Pico-SIM7080G-Cat-M/NB-IoT) - Raspberry Pi Pico integration
+- [Waveshare SIMA7670E Cat-M/NB-IoT HAT Wiki](https://www.waveshare.com/wiki/SIMA7670E_Cat-M/NB-IoT_HAT) - Hardware implementation examples
+- [Waveshare Pico SIMA7670E Wiki](https://www.waveshare.com/wiki/Pico-SIMA7670E-Cat-M/NB-IoT) - Raspberry Pi Pico integration

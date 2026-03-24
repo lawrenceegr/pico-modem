@@ -3,17 +3,17 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/uart.h"
-#include "sim7080g.h"
+#include "modem.h"
 
 using std::string;
 
-Sim7080G::Sim7080G()
+SimA7670E::SimA7670E()
 {
     clear_buffer();
     mqtt_connected = false;
 }
 
-bool Sim7080G::start_modem()
+bool SimA7670E::start_modem()
 {
     printf("\n===== Starting Modem =====\n");
 
@@ -37,7 +37,7 @@ bool Sim7080G::start_modem()
     return false;
 }
 
-bool Sim7080G::boot_modem()
+bool SimA7670E::boot_modem()
 {
     bool powered = false;
     uint32_t attempts = 0;
@@ -70,7 +70,7 @@ bool Sim7080G::boot_modem()
     return false;
 }
 
-void Sim7080G::config_modem()
+void SimA7670E::config_modem()
 {
     // Set error reporting to 2, set modem to text mode, delete left-over SMS,
     // select LTE-only mode, select Cat-M only mode, set the APN
@@ -95,14 +95,14 @@ void Sim7080G::config_modem()
     printf("Modem configured for LTE/3G and the APN set to \"%s\"\n", NETWORK_APN);
 }
 
-void Sim7080G::toggle_module_power()
+void SimA7670E::toggle_module_power()
 {
     gpio_put(PIN_MODEM_PWR, true);
     sleep_ms(1500);
     gpio_put(PIN_MODEM_PWR, false);
 }
 
-bool Sim7080G::check_sim()
+bool SimA7670E::check_sim()
 {
     printf("\n===== Checking SIM =====\n");
 
@@ -128,7 +128,7 @@ bool Sim7080G::check_sim()
     return false;
 }
 
-void Sim7080G::wait_for_registration()
+void SimA7670E::wait_for_registration()
 {
     printf("\n===== Waiting for Network Registration =====\n");
 
@@ -171,7 +171,7 @@ void Sim7080G::wait_for_registration()
     printf("Network registration successful\n");
 }
 
-void Sim7080G::get_sim_info()
+void SimA7670E::get_sim_info()
 {
     printf("\n===== SIM Info =====\n");
 
@@ -194,7 +194,7 @@ void Sim7080G::get_sim_info()
     send_at_response("AT+CREG?", 1000);
 }
 
-void Sim7080G::get_modem_info()
+void SimA7670E::get_modem_info()
 {
     printf("\n===== Modem Info =====\n");
 
@@ -211,13 +211,13 @@ void Sim7080G::get_modem_info()
     send_at_response("AT+CGSN", 1000);
 }
 
-bool Sim7080G::send_at(string cmd, string expected, uint32_t timeout)
+bool SimA7670E::send_at(string cmd, string expected, uint32_t timeout)
 {
     const string response = send_at_response(cmd, timeout);
     return (response.length() > 0 && response.find(expected) != string::npos);
 }
 
-string Sim7080G::send_at_response(string cmd, uint32_t timeout)
+string SimA7670E::send_at_response(string cmd, uint32_t timeout)
 {
     const string data_out = cmd + "\r\n";
     uart_puts(MODEM_UART, data_out.c_str());
@@ -232,7 +232,7 @@ string Sim7080G::send_at_response(string cmd, uint32_t timeout)
     return "ERROR";
 }
 
-void Sim7080G::read_buffer(uint32_t timeout)
+void SimA7670E::read_buffer(uint32_t timeout)
 {
     clear_buffer();
     const uint8_t *buffer_start = &uart_buffer[0];
@@ -251,7 +251,7 @@ void Sim7080G::read_buffer(uint32_t timeout)
     debug_output(buffer_to_string());
 }
 
-void Sim7080G::debug_output(string msg)
+void SimA7670E::debug_output(string msg)
 {
     size_t start = 0;
     size_t end = 0;
@@ -284,7 +284,7 @@ void Sim7080G::debug_output(string msg)
     }
 }
 
-void Sim7080G::clear_buffer()
+void SimA7670E::clear_buffer()
 {
     for (uint32_t i = 0; i < UART_BUFFER_SIZE; i++)
     {
@@ -292,20 +292,17 @@ void Sim7080G::clear_buffer()
     }
 }
 
-string Sim7080G::buffer_to_string()
+string SimA7670E::buffer_to_string()
 {
     string new_string(uart_buffer, rx_ptr);
     return new_string;
 }
 
-bool Sim7080G::activate_pdp()
+bool SimA7670E::activate_pdp()
 {
     printf("\n===== Activating PDP Context =====\n");
 
     // Set network mode to automatic (already done but be explicit)
-    // send_at("AT+CNACT=0,1", "OK", 10000); // This is for SIM7080G
-
-    // For A7670E, use CGACT:
     // First deactivate any existing context
     send_at("AT+CGACT=0,1", "OK", 5000);
     sleep_ms(1000);
@@ -334,7 +331,7 @@ bool Sim7080G::activate_pdp()
 }
 
 // MQTT Functions for A7670E
-bool Sim7080G::mqtt_connect(const char *broker, uint16_t port, const char *client_id)
+bool SimA7670E::mqtt_connect(const char *broker, uint16_t port, const char *client_id)
 {
     printf("\n===== MQTT Connect =====\n");
 
@@ -380,7 +377,7 @@ bool Sim7080G::mqtt_connect(const char *broker, uint16_t port, const char *clien
     return false;
 }
 
-bool Sim7080G::mqtt_disconnect()
+bool SimA7670E::mqtt_disconnect()
 {
     printf("\n===== MQTT Disconnect =====\n");
 
@@ -393,7 +390,7 @@ bool Sim7080G::mqtt_disconnect()
     return true;
 }
 
-bool Sim7080G::mqtt_publish(const char *topic, const char *message)
+bool SimA7670E::mqtt_publish(const char *topic, const char *message)
 {
     if (!mqtt_connected)
     {
@@ -447,7 +444,7 @@ bool Sim7080G::mqtt_publish(const char *topic, const char *message)
     return false;
 }
 
-bool Sim7080G::mqtt_subscribe(const char *topic)
+bool SimA7670E::mqtt_subscribe(const char *topic)
 {
     if (!mqtt_connected)
     {
@@ -485,7 +482,7 @@ bool Sim7080G::mqtt_subscribe(const char *topic)
     return false;
 }
 
-bool Sim7080G::mqtt_is_connected()
+bool SimA7670E::mqtt_is_connected()
 {
     return mqtt_connected;
 }

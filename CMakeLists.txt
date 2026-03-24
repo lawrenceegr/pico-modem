@@ -23,7 +23,7 @@ pico_sdk_init()
 
 add_executable(pico-modem
     main.cpp
-    driver/sim7080g.cpp
+    driver/modem.cpp
     )
 
 target_include_directories(pico-modem PRIVATE

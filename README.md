@@ -21,7 +21,7 @@ The implementation prioritizes clarity and educational value, making it suitable
 ## Hardware Requirements
 
 - **Microcontroller:** Raspberry Pi Pico (RP2040-based board)
-- **Modem Module:** SIM7080G Cat-M/NB-IoT modem (or similar AT command-compatible modem)
+- **Modem Module:** SIMA7670E Cat-M/NB-IoT modem (or similar AT command-compatible modem)
 - **SIM Card:** Standard Micro-SIM with active data plan
 - **LED:** (Optional) For visual status indication
 - **USB Cable:** For power, programming, and serial console output
@@ -31,7 +31,7 @@ The implementation prioritizes clarity and educational value, making it suitable
 Connect the Raspberry Pi Pico to your modem module as follows:
 
 ```
-Raspberry Pi Pico          SIM7080G Modem
+Raspberry Pi Pico          SIMA7670E Modem
 ─────────────────────────────────────────
 GPIO 0 (UART0 TX)    →     RX
 GPIO 1 (UART0 RX)    →     TX
@@ -159,7 +159,7 @@ The firmware uses different LED blink patterns to indicate system state:
 Successful initialization produces output similar to:
 
 ```
-===== Pi Modem - SIM7080G Firmware =====
+===== Pi Modem - SIMA7670E Firmware =====
 Build: Nov 29 2025 14:23:45
 
   UART initialized successfully
@@ -182,10 +182,10 @@ Manufacturer:
 >>> SIMCOM INCORPORATED
 
 Model:
->>> SIMCOM_SIM7080G
+>>> SIMCOM_SIMA7670E
 
 Firmware:
->>> Revision:1351B05SIM7080G
+>>> Revision:1351B05SIMA7670E
 
 IMEI:
 >>> 867698045123456
@@ -217,6 +217,11 @@ Registration:
 >>> +CREG: 0,1
 
 ===== SIM Ready =====
+```
+
+### Subscribe to the MQTT topic
+```bash
+mosquitto_sub -h broker.emqx.io -p 1883 -t aquagate_v2 -v
 ```
 
 ## Troubleshooting
@@ -298,8 +303,8 @@ pico-modem/
 ├── config.h              # Hardware and network configuration
 ├── main.cpp              # Application entry point and main loop
 ├── driver/
-│   ├── sim7080g.h       # SIM7080G driver interface
-│   └── sim7080g.cpp     # SIM7080G driver implementation
+│   ├── modem.h       # SIMA7670E driver interface
+│   └── modem.cpp     # SIMA7670E driver implementation
 ├── docs/
 │   └── blog/            # Technical blog post about the implementation
 ├── CMakeLists.txt       # Build configuration
@@ -308,9 +313,9 @@ pico-modem/
 
 ## Adapting to Other Modems
 
-While this implementation targets the SIM7080G, it can be adapted to other AT command-compatible modems with minimal changes:
+While this implementation targets the SIMA7670E, it can be adapted to other AT command-compatible modems with minimal changes:
 
-1. **Update modem-specific commands** in `sim7080g.cpp`:
+1. **Update modem-specific commands** in `simA7670E.cpp`:
    - Configuration commands in `config_modem()`
    - Vendor-specific AT commands (if using modem-specific features)
 
@@ -337,7 +342,7 @@ See the [blog post](docs/blog/configuring-modem-with-pico.md) for detailed expla
 ## Related Resources
 
 - [Blog Post: Understanding Cellular Modem Communication](docs/blog/configuring-modem-with-pico.md)
-- [SIM7080G AT Command Manual](https://www.simcom.com/product/SIM7080G.html)
+- [SIMA7670E AT Command Manual](https://www.simcom.com/product/SIMA7670E.html)
 - [Raspberry Pi Pico Documentation](https://www.raspberrypi.com/documentation/microcontrollers/)
 - [3GPP AT Command Specification (TS 27.007)](https://www.3gpp.org/DynaReport/27007.htm)
 
