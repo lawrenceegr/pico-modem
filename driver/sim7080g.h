@@ -17,6 +17,14 @@ class Sim7080G {
         bool        send_at(string cmd, string expected = "OK", uint32_t timeout = 500);
         string      send_at_response(string cmd, uint32_t timeout = 500);
 
+        // MQTT functions
+        bool        mqtt_connect(const char* broker, uint16_t port, const char* client_id);
+        bool        mqtt_disconnect();
+        bool        mqtt_publish(const char* topic, const char* message);
+        bool        mqtt_subscribe(const char* topic);
+        bool        mqtt_is_connected();
+        bool        activate_pdp();
+
     private:
         bool        boot_modem();
         void        config_modem();
@@ -27,6 +35,7 @@ class Sim7080G {
         string      buffer_to_string();
         uint8_t     uart_buffer[UART_BUFFER_SIZE];
         uint8_t     *rx_ptr;
+        bool        mqtt_connected;
 };
 
 #endif // _SIM7080G_DRIVER_H_

@@ -5,7 +5,8 @@
 #include "config.h"
 #include "driver/sim7080g.h"
 
-void uart_init_modem() {
+void uart_init_modem()
+{
     uart_init(MODEM_UART, 115200);
     gpio_set_function(PIN_UART_TX, GPIO_FUNC_UART);
     gpio_set_function(PIN_UART_RX, GPIO_FUNC_UART);
@@ -15,21 +16,25 @@ void uart_init_modem() {
     printf("  UART initialized successfully\n\n");
 }
 
-void led_blink(int times, int delay_ms) {
-    for (int i = 0; i < times; i++) {
+void led_blink(int times, int delay_ms)
+{
+    for (int i = 0; i < times; i++)
+    {
         gpio_put(LED_PIN, true);
         sleep_ms(delay_ms);
         gpio_put(LED_PIN, false);
         sleep_ms(delay_ms);
     }
 }
-void setup_led() {
+void setup_led()
+{
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
     gpio_put(LED_PIN, false);
 }
 
-void setup_modem_power_pin() {
+void setup_modem_power_pin()
+{
     gpio_init(PIN_MODEM_PWR);
     gpio_set_dir(PIN_MODEM_PWR, GPIO_OUT);
     gpio_put(PIN_MODEM_PWR, false);
@@ -37,12 +42,14 @@ void setup_modem_power_pin() {
 
 Sim7080G modem;
 
-void setup(){
+void setup()
+{
     setup_led();
     uart_init_modem();
     setup_modem_power_pin();
 }
-int main() {
+int main()
+{
     stdio_init_all();
 
     // Set up the hardware
@@ -50,14 +57,16 @@ int main() {
 
     printf("\n===== Pi Modem - SIM7080G Firmware =====\n");
     printf("Build: %s %s\n\n", __DATE__, __TIME__);
-    
+
     led_blink(3, 150);
 
-    if (!modem.start_modem()) {
+    if (!modem.start_modem())
+    {
         printf("\nERROR: Modem failed to start\n");
         printf("Check: power, UART (TX=%d, RX=%d), PWR_EN=%d\n\n",
                PIN_UART_TX, PIN_UART_RX, PIN_MODEM_PWR);
-        while (true) {
+        while (true)
+        {
             led_blink(10, 100);
             sleep_ms(2000);
         }
@@ -68,21 +77,59 @@ int main() {
 
     bool sim_ready = modem.check_sim();
 
-    if (sim_ready) {
+    if (sim_ready)
+    {
         modem.get_sim_info();
         printf("\n===== SIM Ready =====\n\n");
 
         modem.wait_for_registration();
 
-        while (true) {
-            led_blink(1, 100);
-            sleep_ms(2000);
+        modem.wait_for_registration();
+
+        // Activate PDP before MQTT
+        if (!modem.activate_pdp())
+        {
+            printf("PDP activation failed\n");
+            // handle error
         }
-    } else {
+
+        if (modem.mqtt_connect(MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID))
+        {
+            printf("\n===== MQTT Connected =====\n");
+
+            // Publish a test message
+            modem.mqtt_publish(MQTT_TOPIC, "Hello from Pico Modem!");
+
+            // Main loop - publish periodically
+            uint32_t count = 0;
+            while (true)
+            {
+                led_blink(1, 100);
+                sleep_ms(10000);
+
+                // Publish status every 10 seconds
+                char msg[64];
+                snprintf(msg, sizeof(msg), "{\"count\":%lu,\"status\":\"online\"}", count++);
+                modem.mqtt_publish(MQTT_TOPIC, msg);
+            }
+        }
+        else
+        {
+            printf("\n===== MQTT Connection Failed =====\n");
+            while (true)
+            {
+                led_blink(3, 300);
+                sleep_ms(2000);
+            }
+        }
+    }
+    else
+    {
         printf("\n===== SIM Not Ready =====\n");
         printf("Check: SIM inserted, seated properly, not locked\n\n");
 
-        while (true) {
+        while (true)
+        {
             led_blink(5, 200);
             sleep_ms(2000);
         }

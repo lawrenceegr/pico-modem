@@ -11,6 +11,13 @@
 #define LED_PIN                 23
 
 #define NETWORK_APN   "iot2.safaricom.com"
+
+// MQTT Configuration
+#define MQTT_BROKER   "broker.emqx.io"
+#define MQTT_PORT     1883
+#define MQTT_CLIENT_ID "pico_modem_001"
+#define MQTT_TOPIC    "aquagate_v2"
+
 // Buffer Configuration
 #define UART_BUFFER_SIZE        1024
 
