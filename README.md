@@ -94,26 +94,7 @@ The built `.uf2` file will be ready to flash to your Raspberry Pi Pico.
 
 ## Configuration
 
-Edit [`config.h`](config.h) to match your hardware setup:
-
-```c
-// UART Pin Configuration
-#define PIN_UART_TX             0    // GPIO 0 - UART TX to modem RX
-#define PIN_UART_RX             1    // GPIO 1 - UART RX from modem TX
-#define MODEM_UART              uart0
-
-// Modem Control
-#define PIN_MODEM_PWR           2    // GPIO 2 - Modem power enable
-
-// Status LED
-#define LED_PIN                 23   // GPIO 23 - Status indicator
-
-// Network Configuration
-#define NETWORK_APN             "safaricom"  // Change to your carrier's APN
-
-// UART Buffer
-#define UART_BUFFER_SIZE        1024         // Receive buffer size
-```
+Edit [`config.h`](config.h) to match your hardware setup.
 
 **Important:** Update `NETWORK_APN` to match your mobile carrier:
 
@@ -142,53 +123,67 @@ Use PuTTY, TeraTerm, or the Arduino Serial Monitor:
 - Port: COMx (check Device Manager)
 - Baud rate: 115200
 
-### LED Status Indicators
-
-The firmware uses different LED blink patterns to indicate system state:
-
-| Pattern | Meaning | System State |
-|---------|---------|--------------|
-| 3 quick blinks | Startup initiated | Initialization |
-| 2 medium blinks | Modem powered on | Modem ready |
-| 1 blink every 2s | SIM ready | Normal operation |
-| 5 blinks every 2s | SIM not ready | Warning - check SIM |
-| 10 rapid blinks (repeating) | Modem boot failed | Error - check connections |
-
 ### Expected Output
 
 Successful initialization produces output similar to:
 
 ```
-===== Pi Modem - SIMA7670E Firmware =====
-Build: Nov 29 2025 14:23:45
+[INF] UART initialized
 
-  UART initialized successfully
+===== AquaGate - Pico Firmware =====
+Build: Mar 24 2026 14:31:31
+
+[INF] No valid storage found
+[WRN] Using default actuator states
+[INF] Actuator 0 (GPIO 20) = OFF
+[INF] Actuator 1 (GPIO 25) = OFF
+[INF] Actuator 2 (GPIO 24) = OFF
+[INF] Actuator 3 (GPIO 23) = OFF
+[INF] Actuators initialized
+[INF] Actuators: OK
 
 ===== Starting Modem =====
+>>> 
 Toggling power...
-Waiting 35s for modem boot...
->>> ATE1
+>>> *ATREADY: 1
+>>> +CPIN: READY
+ATE1
 >>> OK
-Modem ready after 35124 ms
+Modem ready after 18500 ms
 
 ===== Configuring Modem =====
->>> AT+CMEE=2;+CMGF=1;+CMGD=,4;+CNMP=38;+CMNB=1;+CGDCONT=1,"IP","safaricom"
+>>> AT+CMEE=2;+CMGF=1;+CMGD=,4;+CNMP=2;+CGDCONT=1,"IP","iot2.safaricom.com"
 >>> OK
-Modem configured for Cat-M and the APN set to "safaricom"
+>>> AT+CGREG=2
+>>> OK
+>>> AT+COPS=0;+CREG=1
+>>> OK
+>>> PB DONE
+>>> AT+CSSLCFG="sslversion",1,3;+SHSSL=1,"";+SHCONF="BODYLEN",1024;+SHCONF="HEADERLEN",350
+>>> ERROR
+Modem configured, APN: "iot2.safaricom.com"
 
 ===== Modem Info =====
 
 Manufacturer:
->>> SIMCOM INCORPORATED
+>>> AT+CGMI
+>>> INCORPORATED
+>>> OK
 
 Model:
->>> SIMCOM_SIMA7670E
+>>> AT+CGMM
+>>> A7670E-LASE
+>>> OK
 
 Firmware:
->>> Revision:1351B05SIMA7670E
+>>> AT+CGMR
+>>> +CGMR: A011B12A7670M7
+>>> OK
 
 IMEI:
->>> 867698045123456
+>>> AT+CGSN
+>>> {IMEI}
+>>> OK
 
 ===== Checking SIM =====
 >>> AT+CPIN?
@@ -199,29 +194,136 @@ SIM: READY
 ===== SIM Info =====
 
 ICCID:
->>> +CCID: 8925412345678901234
+>>> AT+CCID
+>>> ERROR
 
 IMSI:
->>> 639123456789012
+>>> AT+CIMI
+>>> 901280075915063
+>>> OK
 
-Phone Number:
->>> +CNUM: "","+254712345678",129
+Number:
+>>> AT+CNUM
+>>> OK
 
 Operator:
->>> +COPS: 0,0,"Safaricom",7
+>>> AT+COPS?
+>>> +COPS: 0,2,"63902",7
+>>> OK
 
 Signal:
->>> +CSQ: 17,99
+>>> AT+CSQ
+>>> +CSQ: 28,99
+>>> OK
 
-Registration:
->>> +CREG: 0,1
+Reg:
+>>> AT+CREG?
+>>> +CREG: 1,5
+>>> OK
+[INF] SIM ready
 
-===== SIM Ready =====
+===== Waiting for Network Registration =====
+Registration attempt 1...
+>>> AT+CREG?
+>>> +CREG: 1,5
+>>> OK
+Registered (roaming)
+Network registration successful
+
+===== Activating PDP Context =====
+>>> AT+CGACT=0,1
+>>> OK
+>>> +CGEV: ME PDN DEACT 1
+>>> AT+CGACT=1,1
+>>> OK
+>>> AT+CGPADDR=1
+>>> +CGPADDR: 1,10.3.68.173
+>>> OK
+PDP address: AT+CGPADDR=1
++CGPADDR: 1,10.3.68.173
+
+OK
+
+PDP context active
+>>> AT+CGSN
+>>> {IMEI}
+>>> OK
+[DBG] CGSN response: AT+CGSN
+{IMEI}
+
+OK
+
+[INF] IMEI: {IMEI}
+[DBG] Connecting to broker.emqx.io:1883 as aquagate_{IMEI}
+
+===== MQTT Connect =====
+>>> AT+CMQTTDISC=0,60
+>>> +CMQTTDISC: 0,11
+>>> ERROR
+>>> AT+CMQTTREL=0
+>>> ERROR
+>>> AT+CMQTTSTOP
+>>> ERROR
+>>> AT+CMQTTSTART
+>>> OK
+>>> +CMQTTSTART: 0
+>>> AT+CMQTTACCQ=0,"aquagate_{IMEI}"
+>>> OK
+>>> AT+CMQTTCONNECT=0,"tcp://broker.emqx.io:1883",60,1
+>>> OK
+>>> +CMQTTCONNECT: 0,0
+Connected to MQTT broker: broker.emqx.io:1883
+[DBG] Subscribing to to/aquagate/{IMEI}
+>>> AT+CMQTTSUBTOPIC=0,27,1
+>>> >
+>>> OK
+>>> AT+CMQTTSUB=0
+>>> OK
+>>> +CMQTTSUB: 0,0
+Subscribed to to/aquagate/{IMEI}
+>>> AT+CMQTTTOPIC=0,29
+>>> >
+>>> OK
+>>> AT+CMQTTPAYLOAD=0,62
+>>> >
+>>> OK
+>>> AT+CMQTTPUB=0,1,60
+>>> OK
+>>> +CMQTTPUB: 0,0
+Published to from/aquagate/{IMEI}: {"d_id":"{IMEI}","d_type":"aquagate","status":"boot"}
+[INF] Boot message published to from/aquagate/{IMEI}
+
 ```
 
-### Subscribe to the MQTT topic
+### MQTT
+
+The device connects to `broker.emqx.io:1883` and uses the modem's IMEI as its identifier.
+
+### Topics
+
+| Direction | Topic | Description |
+|-----------|-------|-------------|
+| To device | `to/aquagate/{IMEI}` | Commands sent to device |
+| From device | `from/aquagate/{IMEI}` | Heartbeats and responses |
+
+### Testing with Mosquitto
+
+Subscribe to messages from the device:
 ```bash
-mosquitto_sub -h broker.emqx.io -p 1883 -t aquagate_v2 -v
+mosquitto_sub -h broker.emqx.io -p 1883 -t "from/aquagate/IMEI" -v
+```
+
+Send a command to the device (replace `IMEI` with actual IMEI):
+```bash
+mosquitto_pub -h broker.emqx.io -p 1883 -t "to/aquagate/862596087968495" \
+  -m '{"action":"status"}'
+```
+
+### Heartbeat Format
+
+Sent every 30 seconds:
+```json
+{"d_id":"IMEI","d_type":"aquagate","type":"heartbeat","seq":0,"uptime":123,"gpio":{...}}
 ```
 
 ## Troubleshooting
