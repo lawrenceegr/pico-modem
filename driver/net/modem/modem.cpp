@@ -199,20 +199,66 @@ void SimA7670E::send_raw(const char *data)
     uart_puts(MODEM_UART, data);
 }
 
+bool SimA7670E::has_terminator()
+{
+    size_t len = rx_ptr - uart_buffer;
+    if (len < 2) return false;
+
+    // Input prompt: "> "
+    if (uart_buffer[len - 2] == '>' && uart_buffer[len - 1] == ' ')
+        return true;
+
+    // All final result codes end with \r\n
+    if (uart_buffer[len - 2] != '\r' || uart_buffer[len - 1] != '\n')
+        return false;
+
+    // Find start of last line (scan backward past the \r\n we just matched)
+    size_t pos = (len >= 3) ? len - 3 : 0;
+    while (pos > 0 && uart_buffer[pos] != '\n')
+        pos--;
+    if (uart_buffer[pos] == '\n') pos++;
+
+    size_t line_end = len - 2;
+
+    // "OK" on its own line
+    if (line_end - pos == 2 &&
+        uart_buffer[pos] == 'O' && uart_buffer[pos + 1] == 'K')
+        return true;
+
+    // Any line containing "ERROR" (handles ERROR, +CME ERROR, +CMS ERROR)
+    for (size_t i = pos; i + 5 <= line_end; i++) {
+        if (memcmp(&uart_buffer[i], "ERROR", 5) == 0)
+            return true;
+    }
+
+    return false;
+}
+
 void SimA7670E::read_buffer(uint32_t timeout)
 {
     clear_buffer();
-    const uint8_t *buffer_start = &uart_buffer[0];
-    rx_ptr = (uint8_t *)buffer_start;
+    rx_ptr = uart_buffer;
 
-    uint32_t start = time_us_32();
-    while ((time_us_32() - start < timeout * 1000) &&
-           (rx_ptr - buffer_start < UART_BUFFER_SIZE))
+    uint32_t start   = time_us_32();
+    uint32_t last_rx = start;
+
+    while ((time_us_32() - start) < timeout * 1000 &&
+           (rx_ptr - uart_buffer) < UART_BUFFER_SIZE)
     {
         if (uart_is_readable(MODEM_UART))
         {
             uart_read_blocking(MODEM_UART, rx_ptr, 1);
             rx_ptr++;
+            last_rx = time_us_32();
+
+            if (has_terminator())
+                break;
+        }
+        else if (rx_ptr > uart_buffer &&
+                 (time_us_32() - last_rx) > 50000)
+        {
+            // 50ms idle after receiving data — response complete
+            break;
         }
     }
 #if DEBUG

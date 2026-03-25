@@ -30,6 +30,7 @@ private:
     void toggle_module_power();
     void debug_output(std::string msg);
     void clear_buffer();
+    bool has_terminator();
     std::string buffer_to_string();
 
     uint8_t  uart_buffer[UART_BUFFER_SIZE];
