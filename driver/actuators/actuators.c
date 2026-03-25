@@ -29,7 +29,6 @@ static const actuator_state_t default_states[GPIO_COUNT] = {
 int actuators_init(void)
 {
     int ret;
-    stdio_init_all();
     ret = storage_init();
     if (ret < 0) {
         LOG_ERR("Storage init failed: %d", ret);

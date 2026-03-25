@@ -176,13 +176,13 @@ bool SimA7670E::activate_pdp()
     return true;
 }
 
-bool SimA7670E::send_at(string cmd, string expected, uint32_t timeout)
+bool SimA7670E::send_at(const string &cmd, const string &expected, uint32_t timeout)
 {
     const string response = send_at_response(cmd, timeout);
     return (response.length() > 0 && response.find(expected) != string::npos);
 }
 
-string SimA7670E::send_at_response(string cmd, uint32_t timeout)
+string SimA7670E::send_at_response(const string &cmd, uint32_t timeout)
 {
     const string data_out = cmd + "\r\n";
     uart_puts(MODEM_UART, data_out.c_str());
@@ -266,7 +266,7 @@ void SimA7670E::read_buffer(uint32_t timeout)
 #endif
 }
 
-void SimA7670E::debug_output(string msg)
+void SimA7670E::debug_output(const string &msg)
 {
     size_t start = 0;
     size_t end   = 0;

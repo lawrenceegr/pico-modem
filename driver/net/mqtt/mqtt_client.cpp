@@ -27,10 +27,9 @@ bool MqttClient::connect(const char *broker, uint16_t port, const char *client_i
     modem.send_at("AT+CMQTTREL=0", "OK", 1000);
     modem.send_at("AT+CMQTTSTOP", "OK", 2000);
 
-    if (!modem.send_at("AT+CMQTTSTART", "OK", 3000))
     {
         string r = modem.send_at_response("AT+CMQTTSTART", 3000);
-        if (r.find("ERROR") != string::npos &&
+        if (r.find("OK") == string::npos &&
             r.find("+CMQTTSTART: 0") == string::npos)
         {
             LOG_ERR("MQTT service start failed");
@@ -182,16 +181,6 @@ bool MqttClient::poll_message(char *topic_out, size_t topic_size,
 
     if (urc.find("+CMQTTRXSTART") == std::string::npos)
         return false;
-
-    // TEMP: dump raw URC to see exact format
-    printf("=== RAW URC ===\n");
-    for (size_t i = 0; i < urc.size(); i++) {
-        if (urc[i] == '\r') printf("\\r");
-        else if (urc[i] == '\n') printf("\\n\n");
-        else printf("%c", urc[i]);
-    }
-    printf("=== END URC ===\n");
-    // END TEMP
 
     LOG_DBG("URC: %s", urc.c_str());
 
