@@ -37,8 +37,6 @@ bool MqttClient::connect(const char *broker, uint16_t port, const char *client_i
             return false;
         }
     }
-    sleep_ms(500);
-
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "AT+CMQTTACCQ=0,\"%s\"", client_id);
     if (!modem.send_at(cmd, "OK", 2000))
@@ -46,7 +44,6 @@ bool MqttClient::connect(const char *broker, uint16_t port, const char *client_i
         LOG_ERR("Failed to acquire MQTT client");
         return false;
     }
-    sleep_ms(500);
 
     snprintf(cmd, sizeof(cmd),
              "AT+CMQTTCONNECT=0,\"tcp://%s:%d\",60,1", broker, port);
@@ -100,7 +97,6 @@ bool MqttClient::publish(const char *topic, const char *message)
         if (response.find(">") != string::npos)
         {
             modem.send_raw(topic);
-            sleep_ms(500);
             modem.read_buffer(2000);
         }
         else
@@ -115,7 +111,6 @@ bool MqttClient::publish(const char *topic, const char *message)
         if (response.find(">") != string::npos)
         {
             modem.send_raw(message);
-            sleep_ms(500);
             modem.read_buffer(2000);
         }
         else
@@ -155,7 +150,6 @@ bool MqttClient::subscribe(const char *topic)
     if (response.find(">") != string::npos)
     {
         modem.send_raw(topic);
-        sleep_ms(500);
         modem.read_buffer(2000);
     }
     else

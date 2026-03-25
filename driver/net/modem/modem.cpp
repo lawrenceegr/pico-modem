@@ -155,14 +155,12 @@ bool SimA7670E::activate_pdp()
     LOG_INF("Activating PDP context");
 
     send_at("AT+CGACT=0,1", "OK", 5000);
-    sleep_ms(1000);
 
     if (!send_at("AT+CGACT=1,1", "OK", 10000))
     {
         LOG_ERR("PDP activation failed");
         return false;
     }
-    sleep_ms(2000);
 
     string response = send_at_response("AT+CGPADDR=1", 2000);
 
