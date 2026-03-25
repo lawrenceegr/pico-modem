@@ -23,6 +23,7 @@ public:
     void        read_buffer(uint32_t timeout);
     void        send_raw(const char *data);
     void        poll_urc(std::string &out, uint32_t timeout_ms);
+    bool        has_pending_urc();
 
 private:
     bool boot_modem();
@@ -31,10 +32,14 @@ private:
     void debug_output(std::string msg);
     void clear_buffer();
     bool has_terminator();
+    void extract_urcs();
     std::string buffer_to_string();
 
     uint8_t  uart_buffer[UART_BUFFER_SIZE];
     uint8_t *rx_ptr;
+
+    char   urc_stash[UART_BUFFER_SIZE];
+    size_t urc_stash_len;
 };
 
 #endif // _MODEM_H_

@@ -8,9 +8,10 @@
 
 using std::string;
 
-SimA7670E::SimA7670E()
+SimA7670E::SimA7670E() : urc_stash_len(0)
 {
     clear_buffer();
+    memset(urc_stash, 0, sizeof(urc_stash));
 }
 
 bool SimA7670E::start_modem()
@@ -186,6 +187,7 @@ string SimA7670E::send_at_response(string cmd, uint32_t timeout)
     const string data_out = cmd + "\r\n";
     uart_puts(MODEM_UART, data_out.c_str());
     read_buffer(timeout);
+    extract_urcs();
 
     if (rx_ptr > &uart_buffer[0])
         return buffer_to_string();
@@ -299,8 +301,65 @@ string SimA7670E::buffer_to_string()
     return string((char *)uart_buffer, rx_ptr - uart_buffer);
 }
 
+void SimA7670E::extract_urcs()
+{
+    size_t len = rx_ptr - uart_buffer;
+    if (len == 0) return;
+
+    // Scan for +CMQTTRXSTART ... +CMQTTRXEND block in the buffer
+    const char *buf = (const char *)uart_buffer;
+    const char *urc_start = nullptr;
+    const char *urc_end   = nullptr;
+
+    for (size_t i = 0; i + 13 <= len; i++) {
+        if (memcmp(&buf[i], "+CMQTTRXSTART", 13) == 0) {
+            // Walk back to include the leading \r\n if present
+            urc_start = &buf[i];
+            if (i >= 2 && buf[i - 2] == '\r' && buf[i - 1] == '\n')
+                urc_start = &buf[i - 2];
+            break;
+        }
+    }
+    if (!urc_start) return;
+
+    for (size_t i = (urc_start - buf); i + 11 <= len; i++) {
+        if (memcmp(&buf[i], "+CMQTTRXEND", 11) == 0) {
+            // Find end of this line
+            urc_end = &buf[i + 11];
+            while (urc_end < buf + len && *urc_end != '\n')
+                urc_end++;
+            if (urc_end < buf + len) urc_end++; // include \n
+            break;
+        }
+    }
+    if (!urc_end) return;
+
+    // Copy URC to stash
+    size_t urc_len = urc_end - urc_start;
+    if (urc_stash_len + urc_len < sizeof(urc_stash)) {
+        memcpy(&urc_stash[urc_stash_len], urc_start, urc_len);
+        urc_stash_len += urc_len;
+    }
+
+    // Remove URC from main buffer by compacting
+    size_t after = (buf + len) - urc_end;
+    if (after > 0)
+        memmove((void *)urc_start, urc_end, after);
+    rx_ptr -= urc_len;
+}
+
+bool SimA7670E::has_pending_urc()
+{
+    return urc_stash_len > 0;
+}
+
 void SimA7670E::poll_urc(std::string &out, uint32_t timeout_ms)
 {
+    if (urc_stash_len > 0) {
+        out.assign(urc_stash, urc_stash_len);
+        urc_stash_len = 0;
+        return;
+    }
     read_buffer(timeout_ms);
     out = buffer_to_string();
 }
