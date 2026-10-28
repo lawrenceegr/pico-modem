@@ -71,18 +71,26 @@ static bool modem_stage_run() {
         app_state.network_ready = true;
         state = MODEM_ACTIVATE_PDP;
         return false;
-    case MODEM_ACTIVATE_PDP:
+    case MODEM_ACTIVATE_PDP: {
+        static uint32_t pdp_failures = 0;
         if (!modem.activate_pdp()) {
-            LOG_WRN("PDP activation failed — check APN (\"%s\"). Retrying in %dms...",
-                    NETWORK_APN, RECONNECT_DELAY_MS);
+            pdp_failures++;
+            LOG_WRN("PDP activation failed — check APN (\"%s\"). Retrying in %dms... (%lu)",
+                    NETWORK_APN, RECONNECT_DELAY_MS, (unsigned long)pdp_failures);
             sleep_ms(RECONNECT_DELAY_MS);
+            if (pdp_failures >= 10) {
+                LOG_ERR("PDP activation failed %lu times — restarting modem", (unsigned long)pdp_failures);
+                pdp_failures = 0;
+                state = MODEM_START;
+            }
             return false;
         }
+        pdp_failures = 0;
         state = MODEM_GET_IMEI;
         return false;
+    }
     case MODEM_GET_IMEI: {
         std::string r = modem.send_at_response("AT+CGSN", 1000);
-        LOG_DBG("CGSN response: %s", r.c_str());
         const char *p = r.c_str();
         while (*p && (*p < '0' || *p > '9'))
             p++;
@@ -126,7 +134,6 @@ static bool mqtt_stage_run(bool reconnect) {
 
     switch (state) {
     case MQTT_REACTIVATE_PDP:
-        LOG_INF("Reactivating PDP context...");
         if (!modem.activate_pdp()) {
             LOG_WRN("PDP reactivation failed, retrying in %dms...", RECONNECT_DELAY_MS);
             sleep_ms(RECONNECT_DELAY_MS);
@@ -155,7 +162,6 @@ static bool mqtt_stage_run(bool reconnect) {
                     sub_topic);
         }
         app_state.mqtt_connected = true;
-        LOG_INF("Subscribed to %s", sub_topic);
         state = MQTT_DONE;
         return false;
     }

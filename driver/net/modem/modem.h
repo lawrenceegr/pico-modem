@@ -20,7 +20,7 @@ public:
     // AT command interface (used by MqttClient too)
     bool        send_at(const std::string &cmd, const std::string &expected = "OK", uint32_t timeout = 3000);
     std::string send_at_response(const std::string &cmd, uint32_t timeout = 3000);
-    void        read_buffer(uint32_t timeout);
+    void        read_buffer(uint32_t timeout, size_t skip_bytes = 0);
     void        send_raw(const char *data);
     void        poll_urc(std::string &out, uint32_t timeout_ms);
     bool        has_pending_urc();

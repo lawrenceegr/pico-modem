@@ -134,9 +134,7 @@ void SimA7670E::wait_for_registration()
 void SimA7670E::get_sim_info()
 {
     LOG_DBG("SIM info:");
-    LOG_DBG("ICCID:");    send_at_response("AT+CCID", 1000);
     LOG_DBG("IMSI:");     send_at_response("AT+CIMI", 1000);
-    LOG_DBG("Number:");   send_at_response("AT+CNUM", 1000);
     LOG_DBG("Operator:"); send_at_response("AT+COPS?", 2000);
     LOG_DBG("Signal:");   send_at_response("AT+CSQ", 1000);
     LOG_DBG("Reg:");      send_at_response("AT+CREG?", 1000);
@@ -148,7 +146,6 @@ void SimA7670E::get_modem_info()
     LOG_DBG("Manufacturer:"); send_at_response("AT+CGMI", 1000);
     LOG_DBG("Model:");        send_at_response("AT+CGMM", 1000);
     LOG_DBG("Firmware:");     send_at_response("AT+CGMR", 1000);
-    LOG_DBG("IMEI:");         send_at_response("AT+CGSN", 1000);
 }
 
 bool SimA7670E::activate_pdp()
@@ -156,8 +153,9 @@ bool SimA7670E::activate_pdp()
     LOG_INF("Activating PDP context");
 
     send_at("AT+CGACT=0,1", "OK", 5000);
+    sleep_ms(1000);
 
-    if (!send_at("AT+CGACT=1,1", "OK", 10000))
+    if (!send_at("AT+CGACT=1,1", "OK", 30000))
     {
         LOG_ERR("PDP activation failed");
         return false;
@@ -184,9 +182,15 @@ bool SimA7670E::send_at(const string &cmd, const string &expected, uint32_t time
 
 string SimA7670E::send_at_response(const string &cmd, uint32_t timeout)
 {
+    // Drain any stale bytes (e.g. URCs that arrived since the last command)
+    // before sending so they don't poison this command's response.
+    uint8_t discard;
+    while (uart_is_readable(MODEM_UART))
+        uart_read_blocking(MODEM_UART, &discard, 1);
+
     const string data_out = cmd + "\r\n";
     uart_puts(MODEM_UART, data_out.c_str());
-    read_buffer(timeout);
+    read_buffer(timeout, data_out.size());
     extract_urcs();
 
     if (rx_ptr > &uart_buffer[0])
@@ -234,13 +238,14 @@ bool SimA7670E::has_terminator()
     return false;
 }
 
-void SimA7670E::read_buffer(uint32_t timeout)
+void SimA7670E::read_buffer(uint32_t timeout, size_t skip_bytes)
 {
     clear_buffer();
     rx_ptr = uart_buffer;
 
-    uint32_t start   = time_us_32();
-    uint32_t last_rx = start;
+    uint32_t start      = time_us_32();
+    uint32_t last_rx    = start;
+    size_t   bytes_read = 0;
 
     while ((time_us_32() - start) < timeout * 1000 &&
            (rx_ptr - uart_buffer) < UART_BUFFER_SIZE)
@@ -249,15 +254,17 @@ void SimA7670E::read_buffer(uint32_t timeout)
         {
             uart_read_blocking(MODEM_UART, rx_ptr, 1);
             rx_ptr++;
+            bytes_read++;
             last_rx = time_us_32();
 
             if (has_terminator())
                 break;
         }
-        else if (rx_ptr > uart_buffer &&
+        else if (bytes_read > skip_bytes &&
+                 rx_ptr > uart_buffer &&
                  (time_us_32() - last_rx) > 50000)
         {
-            // 50ms idle after receiving data — response complete
+            // 50ms idle after receiving response data (beyond echo) — complete
             break;
         }
     }

@@ -29,10 +29,26 @@ bool MqttClient::connect(const char *broker, uint16_t port, const char *client_i
 
     {
         string r = modem.send_at_response("AT+CMQTTSTART", 3000);
-        if (r.find("OK") == string::npos &&
-            r.find("+CMQTTSTART: 0") == string::npos)
+        if (r.find("ERROR") != string::npos)
         {
-            LOG_ERR("MQTT service start failed");
+            LOG_ERR("MQTT service start failed: %s", r.c_str());
+            return false;
+        }
+        // Wait for +CMQTTSTART: 0 — confirms the MQTT stack is ready.
+        // Stale +CMQTTSTOP: 0 URCs from the cleanup may arrive first; skip them.
+        bool started = false;
+        for (int i = 0; i < 3 && !started; i++)
+        {
+            string urc;
+            modem.poll_urc(urc, 3000);
+            if (urc.find("+CMQTTSTART: 0") != string::npos)
+                started = true;
+            else if (urc.empty())
+                break;
+        }
+        if (!started)
+        {
+            LOG_ERR("MQTT service start timeout");
             return false;
         }
     }
@@ -46,16 +62,24 @@ bool MqttClient::connect(const char *broker, uint16_t port, const char *client_i
 
     snprintf(cmd, sizeof(cmd),
              "AT+CMQTTCONNECT=0,\"tcp://%s:%d\",60,1", broker, port);
-    string response = modem.send_at_response(cmd, 10000);
-
-    if (response.find("+CMQTTCONNECT: 0,0") != string::npos)
+    // Modem sends OK first (command accepted), then +CMQTTCONNECT: 0,X async
+    string r1 = modem.send_at_response(cmd, 10000);
+    if (r1.find("OK") == string::npos)
+    {
+        LOG_ERR("MQTT connect command failed: %s", r1.c_str());
+        connected = false;
+        return false;
+    }
+    string r2;
+    modem.poll_urc(r2, 10000);
+    if (r2.find("+CMQTTCONNECT: 0,0") != string::npos)
     {
         LOG_INF("Connected to MQTT broker: %s:%d", broker, port);
         connected = true;
         return true;
     }
 
-    LOG_DBG("Failed to connect to MQTT broker");
+    LOG_ERR("MQTT connect URC failed: %s", r2.c_str());
     connected = false;
     return false;
 }
@@ -75,61 +99,50 @@ bool MqttClient::disconnect()
 
 bool MqttClient::publish(const char *topic, const char *message)
 {
-    for (int attempt = 0; attempt < 2; attempt++)
+    if (!connected)
+        return false;
+
+    char cmd[128];
+    uint16_t topic_len = strlen(topic);
+    uint16_t msg_len   = strlen(message);
+
+    snprintf(cmd, sizeof(cmd), "AT+CMQTTTOPIC=0,%d", topic_len);
+    string response = modem.send_at_response(cmd, 2000);
+    if (response.find(">") == string::npos)
     {
-        if (!connected)
-        {
-            LOG_WRN("MQTT not connected, reconnecting...");
-            if (!connect(broker, port, client_id))
-            {
-                LOG_ERR("Reconnect failed");
-                return false;
-            }
-        }
+        LOG_WRN("Publish failed: no topic prompt");
+        connected = false;
+        return false;
+    }
+    modem.send_raw(topic);
+    modem.read_buffer(2000);
 
-        char cmd[128];
-        uint16_t topic_len = strlen(topic);
-        uint16_t msg_len   = strlen(message);
+    snprintf(cmd, sizeof(cmd), "AT+CMQTTPAYLOAD=0,%d", msg_len);
+    response = modem.send_at_response(cmd, 2000);
+    if (response.find(">") == string::npos)
+    {
+        LOG_WRN("Publish failed: no payload prompt");
+        connected = false;
+        return false;
+    }
+    modem.send_raw(message);
+    modem.read_buffer(2000);
 
-        snprintf(cmd, sizeof(cmd), "AT+CMQTTTOPIC=0,%d", topic_len);
-        string response = modem.send_at_response(cmd, 2000);
-        if (response.find(">") != string::npos)
-        {
-            modem.send_raw(topic);
-            modem.read_buffer(2000);
-        }
-        else
-        {
-            LOG_WRN("Failed to set topic (attempt %d)", attempt + 1);
-            connected = false;
-            continue;
-        }
-
-        snprintf(cmd, sizeof(cmd), "AT+CMQTTPAYLOAD=0,%d", msg_len);
-        response = modem.send_at_response(cmd, 2000);
-        if (response.find(">") != string::npos)
-        {
-            modem.send_raw(message);
-            modem.read_buffer(2000);
-        }
-        else
-        {
-            LOG_WRN("Failed to set payload (attempt %d)", attempt + 1);
-            connected = false;
-            continue;
-        }
-
-        response = modem.send_at_response("AT+CMQTTPUB=0,1,60", 5000);
-        if (response.find("+CMQTTPUB: 0,0") != string::npos)
+    // Modem sends OK first (command accepted), then +CMQTTPUB: 0,X async
+    response = modem.send_at_response("AT+CMQTTPUB=0,1,60", 5000);
+    if (response.find("OK") != string::npos)
+    {
+        string urc;
+        modem.poll_urc(urc, 5000);
+        if (urc.find("+CMQTTPUB: 0,0") != string::npos)
         {
             LOG_DBG("Published to %s: %s", topic, message);
             return true;
         }
-
-        LOG_WRN("Publish failed (attempt %d)", attempt + 1);
-        connected = false;
     }
 
+    LOG_WRN("Publish failed");
+    connected = false;
     return false;
 }
 
@@ -157,11 +170,17 @@ bool MqttClient::subscribe(const char *topic)
         return false;
     }
 
+    // Modem sends OK first (command accepted), then +CMQTTSUB: 0,X async
     response = modem.send_at_response("AT+CMQTTSUB=0", 5000);
-    if (response.find("+CMQTTSUB: 0,0") != string::npos)
+    if (response.find("OK") != string::npos)
     {
-        LOG_INF("Subscribed to %s", topic);
-        return true;
+        string urc;
+        modem.poll_urc(urc, 5000);
+        if (urc.find("+CMQTTSUB: 0,0") != string::npos)
+        {
+            LOG_INF("Subscribed to %s", topic);
+            return true;
+        }
     }
 
     LOG_ERR("Subscribe failed");

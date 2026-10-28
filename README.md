@@ -319,6 +319,10 @@ mosquitto_pub -h broker.emqx.io -p 1883 -t "to/aquagate/862596087968495" \
   -m '{"action":"status"}'
 ```
 
+Toggle GPIOs
+```bash
+mosquitto_pub -h broker.emqx.io -p 1883 -t "to/aquagate/862596087968495" -m '{"action":"set","pin":0,"level":"high"}'
+```
 ### Heartbeat Format
 
 Sent every 30 seconds:

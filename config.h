@@ -20,7 +20,7 @@
 #define GPIO_COUNT              4
 
 // ---- Network ----
-#define NETWORK_APN             "iot2.safaricom.com"
+#define NETWORK_APN             "internet"
 
 // ---- MQTT Broker ----
 #define BROKER_HOSTNAME         "broker.emqx.io"
